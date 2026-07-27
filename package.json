@@ -1,0 +1,12 @@
+{
+  "name": "wot-tactics-server",
+  "version": "1.0.0",
+  "description": "WoT Tactics WebSocket Server with keep-alive",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "ws": "^8.14.2"
+  }
+}

@@ -1,13 +1,9 @@
 const WebSocket = require('ws');
 const http = require('http');
 
-// ---------- Настройка порта ----------
 const PORT = process.env.PORT || 8080;
-
-// ---------- Хранилище комнат ----------
 const rooms = {};
 
-// ---------- Создаём HTTP-сервер (для пингов и статуса) ----------
 const server = http.createServer((req, res) => {
     if (req.url === '/ping' || req.url === '/') {
         res.writeHead(200, { 'Content-Type': 'text/plain' });
@@ -18,11 +14,10 @@ const server = http.createServer((req, res) => {
     }
 });
 
-// ---------- Создаём WebSocket-сервер поверх HTTP ----------
 const wss = new WebSocket.Server({ server });
 
 wss.on('connection', (ws) => {
-    console.log('Новый клиент');
+    console.log('New client');
 
     ws.on('message', (message) => {
         let data;
@@ -101,6 +96,34 @@ wss.on('connection', (ws) => {
                 broadcastRoomList();
                 break;
             }
+            // ---------- НОВЫЕ ТИПЫ СООБЩЕНИЙ ----------
+            case 'draw_freehand': {
+                if (!ws.room || !rooms[ws.room]) return;
+                const { payload } = data; // { points, color, lineWidth }
+                rooms[ws.room].drawings.push({ type: 'freehand', ...payload });
+                rooms[ws.room].players.forEach(client => {
+                    if (client !== ws && client.readyState === WebSocket.OPEN) {
+                        client.send(JSON.stringify({ type: 'draw_freehand', payload }));
+                    }
+                });
+                break;
+            }
+            case 'update_icon': {
+                if (!ws.room || !rooms[ws.room]) return;
+                const { index, newX, newY } = data; // index в массиве drawings
+                const drawing = rooms[ws.room].drawings[index];
+                if (drawing && drawing.type === 'icon') {
+                    drawing.x = newX;
+                    drawing.y = newY;
+                    rooms[ws.room].players.forEach(client => {
+                        if (client !== ws && client.readyState === WebSocket.OPEN) {
+                            client.send(JSON.stringify({ type: 'update_icon', index, newX, newY }));
+                        }
+                    });
+                }
+                break;
+            }
+            // Старые типы (draw, clear, load_map) оставляем для совместимости
             case 'draw': {
                 if (!ws.room || !rooms[ws.room]) return;
                 const { payload } = data;
@@ -143,14 +166,13 @@ wss.on('connection', (ws) => {
         if (ws.room && rooms[ws.room]) {
             rooms[ws.room].players.delete(ws);
             if (rooms[ws.room].players.size === 0) {
-                // Можно удалить пустую комнату, но оставим для истории
+                // Можно удалить пустую комнату, но оставим
             }
             broadcastRoomList();
         }
     });
 });
 
-// ---------- Функция рассылки списка комнат ----------
 function broadcastRoomList() {
     const list = Object.keys(rooms).map(name => ({
         name,
@@ -164,24 +186,19 @@ function broadcastRoomList() {
     });
 }
 
-// ---------- Автопинг для предотвращения засыпания ----------
 function startKeepAlive() {
-    // Пингуем сами себя каждые 5 минут через HTTP-запрос
     const pingUrl = `http://localhost:${PORT}/ping`;
     setInterval(() => {
         fetch(pingUrl)
             .then(res => {
-                if (res.ok) console.log('[keep-alive] Пинг успешен');
-                else console.warn('[keep-alive] Ответ не OK');
+                if (res.ok) console.log('[keep-alive] Ping OK');
+                else console.warn('[keep-alive] Ping failed');
             })
-            .catch(err => console.warn('[keep-alive] Ошибка пинга:', err.message));
-    }, 5 * 60 * 1000); // 5 минут
+            .catch(err => console.warn('[keep-alive] Ping error:', err.message));
+    }, 5 * 60 * 1000);
 }
 
-// ---------- Запуск сервера ----------
 server.listen(PORT, () => {
-    console.log(`✅ HTTP сервер запущен на порту ${PORT}`);
-    console.log(`✅ WebSocket сервер запущен на порту ${PORT}`);
-    // Запускаем автопинг
+    console.log(`✅ HTTP + WebSocket сервер запущен на порту ${PORT}`);
     startKeepAlive();
 });

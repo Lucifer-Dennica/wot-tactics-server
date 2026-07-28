@@ -157,6 +157,24 @@ wss.on('connection', (ws) => {
                 });
                 break;
             }
+            // ===== НОВЫЙ ОБРАБОТЧИК ДЛЯ sync_drawings =====
+            case 'sync_drawings': {
+                if (!ws.room || !rooms[ws.room]) return;
+                const { drawings } = data;
+                // Проверяем, что drawings — массив
+                if (!Array.isArray(drawings)) return;
+                // Заменяем рисунки в комнате
+                rooms[ws.room].drawings = drawings;
+                // Рассылаем всем в комнате, включая отправителя? Лучше всем, кроме отправителя, но отправитель уже обновил локально.
+                // Однако чтобы синхронизировать всех, разошлём всем.
+                rooms[ws.room].players.forEach(client => {
+                    if (client !== ws && client.readyState === WebSocket.OPEN) {
+                        client.send(JSON.stringify({ type: 'sync_drawings', drawings }));
+                    }
+                });
+                // Также отправим самому отправителю подтверждение (опционально), но он уже знает.
+                break;
+            }
             default:
                 console.warn('Неизвестный тип:', data.type);
         }
